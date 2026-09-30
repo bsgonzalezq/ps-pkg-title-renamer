@@ -11,7 +11,7 @@
 # General Public License for more details: LICENSE, or <https://www.gnu.org/licenses/>.
 #
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Rename PS4 pkgs from their param.sfo to "<game> [base|patch|dlc].pkg" with optional ID, version,
+"""Rename PS4 and PS5 pkgs from their param.sfo / param.json to "<game> [base|patch|dlc].pkg" with optional ID, version,
 content ID and region tags, rename PS5 / dumped PS4 game folders (sce_sys/param.json or
 param.sfo) the same way, move loose pkgs into their game folder, and replace title IDs
 (CUSA12345, ...) in folder names with game titles.
@@ -34,6 +34,7 @@ The game title is always used, other parts are added as tags; the type tag is la
   <title>[ <label>][ <ID>][ <region>][ <version>][ <content ID>][ <type>].pkg   (default order)
   --add-id           title ID tag             Bloodborne [CUSA00900] [patch].pkg
   --add-region       region tag               Bloodborne [USA] [patch].pkg
+  --add-console      console tag (db)         Bloodborne [PS4] [patch].pkg
   --add-version      version tag              Bloodborne [v1.09] [patch].pkg   (patch: APP_VER, base/DLC: VERSION)
   --add-content-id   content ID tag           Bloodborne [UP9000-CUSA00900_00-BLOODBORNE000000] [patch].pkg
   --no-type          no type tag              Bloodborne [v1.09].pkg
@@ -42,7 +43,7 @@ The game title is always used, other parts are added as tags; the type tag is la
   --sep SEP          SEP instead of spaces    --sep _ : Bloodborne_[CUSA00900]_[v1.09]_[patch].pkg
   --no-brackets      tags without [ ]         Bloodborne CUSA00900 v1.09 patch.pkg
   --order PARTS      order in .pkg names      --order id,title : [CUSA00900] Bloodborne [v1.09] [patch].pkg
-                     parts: title,label,id,region,version,cid,type (listed first, rest keep default order)
+                     parts: title,label,id,region,console,version,cid,type (listed first, rest keep default order)
   label = the DLC name, or a Title you edited in the db's PKGS section (works for base, patch and DLC)
   Game folders (PS5 sce_sys/param.json, PS4 dump sce_sys/param.sfo) are named like a pkg with
   type [app] and never entered: The Binding of Isaac Repentance [PPSA03311] [v1.01] [app]
@@ -65,7 +66,7 @@ anywhere else, it creates ./ps4-pkg-title-renamer and moves there.
 Works on Linux, macOS and Windows 10/11 (use `py` or `python` instead of `python3`).
 
 DB (ps4_titles.db, plain text, '#' comments; edits are kept, --build-db --rebuild starts over):
-  GAMES:  TitleID|Title|Region                          CUSA00900|Bloodborne™|USA
+  GAMES:  TitleID|Title|Region|Console                  CUSA00900|Bloodborne™|USA|PS4
   PKGS:   ContentID|Version|Type|TitleID|Title          UP9000-CUSA00900_00-SPEXPANSIONDLC03|01.00|dlc|CUSA00900|Bloodborne The Old Hunters
   Game titles and DLC titles are used for names; edit them to rename.
 """
@@ -139,7 +140,7 @@ def windows_safe(name):
 
 
 class TitleDB(dict):
-    """The title db: {title_id: (title, region)} plus .pkgs, one entry per pkg file:
+    """The title db: {title_id: (title, region, console)} plus .pkgs, one entry per pkg file:
     {(content_id, type, version): (title_id, pkg_title)}; pkg_title is the title in the pkg
     (the DLC's name for DLC, the game title as the pkg spells it for base games/patches)."""
 
@@ -159,9 +160,12 @@ class TitleDB(dict):
         return None
 
 
+CID_RE = re.compile(r'^[A-Z]{2}\d{4}-[A-Z]{4}\d{5}_\d\d-')   # content ID: starts a PKGS line
+
+
 def load_db(path):
-    """Read the db. Lines with 3 fields are games (TitleID|Title|Region), lines with 5 fields
-    are pkgs (ContentID|Version|Type|TitleID|DLC title); older dbs only have game lines."""
+    """Read the db. GAMES lines: TitleID|Title|Region|Console (older dbs: no Console field).
+    PKGS lines start with a content ID: ContentID|Version|Type|TitleID|Title."""
     db = TitleDB()
     with open(path, encoding='utf-8') as f:
         for line in f:
@@ -169,11 +173,13 @@ def load_db(path):
             if not line or line.startswith('#'):
                 continue
             parts = [p.strip() for p in line.split('|')]
-            if len(parts) >= 5:
+            if CID_RE.match(parts[0]) and len(parts) >= 5:
                 cid, ver, kind, gid = parts[:4]
                 db.pkgs[(cid, kind, ver)] = (gid.upper(), '|'.join(parts[4:]))
+            elif len(parts) >= 4 and parts[-1].upper() in CONSOLES + ('',):
+                db[parts[0].upper()] = ('|'.join(parts[1:-2]), parts[-2], parts[-1].upper())
             elif len(parts) >= 3:
-                db[parts[0].upper()] = ('|'.join(parts[1:-1]), parts[-1])
+                db[parts[0].upper()] = ('|'.join(parts[1:-1]), parts[-1], '')
     return db
 
 
@@ -212,37 +218,74 @@ def parse_sfo(d):
         raise SfoError(f'param.sfo corrupt: {e}')
 
 
-def read_sfo(pkg):
-    """Return (content_id, {key: value}) from a PS4 PKG's param.sfo.
-    Raises NotPkg for files that aren't PS4 pkgs, SfoError when the param.sfo can't be used."""
+CONSOLES = ('PS1', 'PS2', 'PS3', 'PS4', 'PS5')
+PS5_CONTENT_TYPES = {0x20: 'base'}   # CNT content type -> kind; only base games seen so far
+
+
+def read_pkg(path):
+    """Metadata of a PS4 or PS5 pkg: (console, content_id, content_type, meta), where meta is the
+    param.sfo dict (PS4, entry 0x1000) or the param.json dict (PS5, entry 0x2000).
+
+    PS4 pkgs start with a "\x7fCNT" header. PS5 pkgs start with "\x7fFIH"; the little-endian
+    u64 at 0x58 points to an embedded "\x7fCNT" block with the same entry table as a PS4 pkg.
+    Raises NotPkg for files that aren't PS4/PS5 pkgs, SfoError when the metadata can't be used."""
     try:
-        with open(lp(pkg), 'rb') as f:
+        with open(lp(path), 'rb') as f:
             fsize = os.fstat(f.fileno()).st_size
             h = f.read(0x100)
-            if len(h) < 0x100 or h[:4] != b'\x7fCNT':
-                raise NotPkg('not a PS4 pkg')
+            if len(h) >= 0x100 and h[:4] == b'\x7fCNT':
+                console, cnt, want, what = 'PS4', 0, 0x1000, 'param.sfo'
+            elif len(h) >= 0x100 and h[:4] == b'\x7fFIH':
+                console, want, what = 'PS5', 0x2000, 'param.json'
+                cnt, = struct.unpack('<Q', h[0x58:0x60])
+                if cnt + 0x100 > fsize:
+                    raise SfoError('PS5 pkg corrupt: metadata block out of range')
+                f.seek(cnt)
+                h = f.read(0x100)
+                if h[:4] != b'\x7fCNT':
+                    raise SfoError('PS5 pkg corrupt: metadata block not found')
+            else:
+                raise NotPkg('not a PS4/PS5 pkg')
             count, = struct.unpack('>I', h[0x10:0x14])
             table, = struct.unpack('>I', h[0x18:0x1C])
-            if count == 0 or count > 100000 or table + count * 32 > fsize:
+            ctype, = struct.unpack('>I', h[0x74:0x78])
+            if count == 0 or count > 100000 or cnt + table + count * 32 > fsize:
                 raise SfoError('pkg corrupt: entry table out of range')
             cid = h[0x40:0x64].decode('ascii', 'replace')
-            f.seek(table)
+            f.seek(cnt + table)
             entries = f.read(count * 32)
             for i in range(count):
                 eid, _, _, _, off, size = struct.unpack('>6I', entries[i * 32:i * 32 + 24])
-                if eid != 0x1000:  # param.sfo
+                if eid != want:
                     continue
-                if size < 20 or size > MAX_SFO or off + size > fsize:
-                    raise SfoError(f'param.sfo corrupt: size {size} / offset {off} out of range')
-                f.seek(off)
-                return cid, parse_sfo(f.read(size))
-            raise SfoError('param.sfo not found in pkg')
+                if size < 2 or size > MAX_SFO or cnt + off + size > fsize:
+                    raise SfoError(f'{what} corrupt: size {size} / offset {off} out of range')
+                f.seek(cnt + off)
+                data = f.read(size)
+                if console == 'PS4':
+                    return console, cid, ctype, parse_sfo(data)
+                try:
+                    meta = json.loads(data.decode('utf-8-sig').rstrip('\0'))
+                except ValueError as e:
+                    raise SfoError(f'param.json corrupt: {e}')
+                if not isinstance(meta, dict):
+                    raise SfoError('param.json corrupt: not an object')
+                return console, cid, ctype, meta
+            raise SfoError(f'{what} not found in pkg')
     except (NotPkg, SfoError):
         raise
     except OSError as e:
         raise SfoError(f'pkg unreadable: {e.strerror or e}')
     except (ValueError, struct.error) as e:  # includes UnicodeDecodeError
-        raise SfoError(f'param.sfo corrupt: {e}')
+        raise SfoError(f'pkg metadata corrupt: {e}')
+
+
+def read_sfo(pkg):
+    """(content_id, param.sfo dict) of a PS4 pkg (kept for PS4-only callers)."""
+    console, cid, _, meta = read_pkg(pkg)
+    if console != 'PS4':
+        raise NotPkg('not a PS4 pkg')
+    return cid, meta
 
 
 FOREIGN = re.compile(r'[぀-ヺー-ヿ㐀-䶿一-鿿가-힯ᄀ-ᇿ㄰-㆏]')
@@ -357,9 +400,10 @@ def write_db(db, path):
     pkgs = getattr(db, 'pkgs', {})
     with open(path, 'w', encoding='utf-8') as f:
         f.write('# PS4 title DB  (edit titles freely: your edits are kept; --build-db --rebuild starts over)\n')
-        f.write('# GAMES: TitleID|Title|Region  (USA/EUR/JPN/ASIA/KOR, HB = homebrew)\n')
+        f.write('# GAMES: TitleID|Title|Region|Console  (region USA/EUR/JPN/ASIA/KOR, HB = homebrew;\n'
+                '#   console PS4/PS5 is detected, PS1/PS2/PS3 can be set by hand, e.g. for classics)\n')
         for gid in sorted(db):
-            f.write(f'{gid}|{db[gid][0]}|{db[gid][1]}\n')
+            f.write(f'{gid}|{db[gid][0]}|{db[gid][1]}|{db[gid][2] if len(db[gid]) > 2 else ""}\n')
         f.write('\n# PKGS: ContentID|Version|Type|TitleID|Title  (one line per pkg file and version;\n'
                 '#   Title = the title in the pkg; for DLC it is the DLC name used in [dlc] names: edit it to rename)\n')
         for (cid, kind, ver) in sorted(pkgs, key=lambda k: (pkgs[k][0], k[1] != 'base', k[1], k[0], k[2])):
@@ -382,10 +426,10 @@ def translate_db(db, offline):
         return
     print(f'Looking up English names for {len(foreign)} title(s)...')
     for gid in foreign:
-        title, region = db[gid]
+        title, region, console = db[gid]
         en = translate_title(title)
         if en:
-            db[gid] = (en, region)
+            db[gid] = (en, region, console)
             print(f'  ~ {gid}: {title}  ->  {en}')
         else:
             print(f'  ! {gid}: no English name found, keeping "{title}"')
@@ -413,7 +457,9 @@ def build_db(root, path, rebuild=False, offline=False):
                 print(f'  ! {os.path.relpath(item, root)}: {problem[1]}', file=sys.stderr)
             if info:
                 items.append(info)
-    for gid, kind, ptitle, ver, pcid in items:
+    consoles = {}
+    for gid, kind, ptitle, ver, pcid, console in items:
+        consoles.setdefault(gid, console)
         # one line per pkg file and version; existing (possibly hand-edited) lines are kept
         key = (pcid, kind, ver)
         old = (pcid, kind, '01.00')  # base lines recorded with APP_VER (always 01.00) by v1.0.0
@@ -432,11 +478,14 @@ def build_db(root, path, rebuild=False, offline=False):
             continue
         title = ptitle or gid
         if gid not in found or prio < found[gid][0]:
-            found[gid] = (prio, title, pcid)
-    for gid, (_, title, cid) in sorted(found.items()):
+            found[gid] = (prio, title, pcid, console)
+    for gid, (_, title, cid, console) in sorted(found.items()):
         region = REGIONS.get(cid[:2], 'HB' if cid[:1] in 'IE' else '??')
-        db[gid] = (title, region)
-        print(f'  + {gid}|{title}|{region}')
+        db[gid] = (title, region, console)
+        print(f'  + {gid}|{title}|{region}|{console}')
+    for gid, console in consoles.items():   # games from older dbs have no console yet; edits are kept
+        if gid in db and not db[gid][2]:
+            db[gid] = (db[gid][0], db[gid][1], console)
     translate_db(db, offline)
     write_db(db, path)
     print(f'{len(found)} new game(s), {new_pkgs} new pkg(s); {len(db)} games, {len(db.pkgs)} pkgs -> {path}')
@@ -446,8 +495,9 @@ def build_db(root, path, rebuild=False, offline=False):
 
 def missing_ids(root, db):
     """What --build-db could add: title IDs of base/patch pkgs and game folders not in db, plus
-    pkgs / game folders (content ID, type, version) not recorded yet. Returns (ids, pkg_count)."""
-    ids, pkgs = set(), 0
+    pkgs / game folders (content ID, type, version) not recorded yet, and games in the db that
+    have no console yet. Returns (ids, pkg_count, no_console_count)."""
+    ids, pkgs, no_console = set(), 0, set()
     for dp, dns, fns in walk_games(root):
         for name in dns + fns:
             path = os.path.join(dp, name)
@@ -457,20 +507,23 @@ def missing_ids(root, db):
                 info = pkg_info(path) if name.lower().endswith('.pkg') else None
             if not info:
                 continue
-            gid, kind, _, ver, cid = info
+            gid, kind, _, ver, cid, _ = info
             if kind != 'dlc' and gid not in db:
                 ids.add(gid)
+            if gid in db and not db[gid][2]:
+                no_console.add(gid)
             if (cid, kind, ver) not in db.pkgs:
                 pkgs += 1
-    return ids, pkgs
+    return ids, pkgs, len(no_console)
 
 
 # a title ID in a name, bare or as a "[CUSA00900]" tag; not the one inside a content ID
 # ("UP9000-CUSA00900_00-...")
 ANY_ID_RE = re.compile(r'(\[)?(?<![A-Za-z0-9])([A-Z]{4}\d{5})(?(1)\])(?![0-9])(?!_\d\d-)')
 REGION_TAGS = ('USA', 'EUR', 'JPN', 'ASIA', 'KOR', 'HB')
-# a region tag (from --add-region) right at the start of the text: " [USA]", "_USA", ...
-REGION_RE = re.compile(r'[\s._-]*(\[)?(?:' + '|'.join(REGION_TAGS) + r')(?(1)\])(?![A-Za-z0-9])')
+# region / console tags (--add-region, --add-console) right at the start of the text: " [USA] [PS5]"
+_META = '|'.join(REGION_TAGS + ('PS1', 'PS2', 'PS3', 'PS4', 'PS5'))
+REGION_RE = re.compile(r'(?:[\s._-]*(?:\[(?:' + _META + r')\]|(?:' + _META + r')(?![A-Za-z0-9])))+')
 
 
 def _alnum(s):
@@ -481,7 +534,7 @@ def safe_title(db, gid):
     return re.sub(r'\s+', ' ', db[gid][0].translate(BAD)).strip()
 
 
-FILE_PARTS = ('title', 'label', 'id', 'region', 'version', 'cid', 'type')   # default order in .pkg names
+FILE_PARTS = ('title', 'label', 'id', 'region', 'console', 'version', 'cid', 'type')   # default order in .pkg names
 PART_ALIASES = {'content-id': 'cid', 'contentid': 'cid', 'dlc': 'label', 'name': 'label', 'ver': 'version'}
 
 
@@ -512,14 +565,16 @@ class Style:
     brackets     put tags in [ ]
     no_type      leave out the type tag                   [base] / [patch] / [dlc]
     add_region   region tag after the title/ID            [USA]
+    add_console  console tag after the region             [PS5]
     order        order of the parts in .pkg names (folders always: title, ID, region)
     """
 
     def __init__(self, add_id=False, add_version=False, add_cid=False, no_title=False,
-                 sep=' ', brackets=True, no_type=False, add_region=False, order=FILE_PARTS):
+                 sep=' ', brackets=True, no_type=False, add_region=False, order=FILE_PARTS,
+                 add_console=False):
         self.add_id, self.add_version, self.add_cid = add_id, add_version, add_cid
         self.no_title, self.sep, self.brackets, self.no_type = no_title, sep, brackets, no_type
-        self.add_region, self.order = add_region, tuple(order)
+        self.add_region, self.order, self.add_console = add_region, tuple(order), add_console
 
     def tag(self, text):
         return f'[{text}]' if self.brackets else text
@@ -529,6 +584,10 @@ class Style:
 
     def join(self, *parts):
         return self.sep.join(p for p in parts if p)
+
+    def console(self, db, gid):
+        c = db[gid][2] if gid in db and self.add_console and len(db[gid]) > 2 else ''
+        return self.tag(c) if c else ''
 
     def region(self, db, gid):
         r = db[gid][1] if gid in db and self.add_region and db[gid][1] in REGION_TAGS else ''
@@ -548,6 +607,7 @@ class Style:
             # an unknown game already shows its ID as the title
             'id': (gid if self.add_id and (known or self.no_title) else '', True),
             'region': (region, True),
+            'console': (db[gid][2] if known and self.add_console and len(db[gid]) > 2 else '', True),
             'version': (version_tag(ver) if self.add_version else '', True),
             'cid': (cid if self.add_cid else '', True),
             'type': ('' if self.no_type else kind, True),
@@ -571,7 +631,7 @@ class Style:
         if not known:
             return self.join(gid, extra)
         title = self.spaced(safe_title(db, gid))
-        return self.join(title, extra, self.tag(gid) if self.add_id else '', region)
+        return self.join(title, extra, self.tag(gid) if self.add_id else '', region, self.console(db, gid))
 
 
 def cut_title(text, title):
@@ -626,18 +686,25 @@ def strip_prefix(text, prefix):
 
 
 def pkg_read(path):
-    """(info, problem) for a .pkg: info = (title_id, kind, dlc_title, version, content_id) or None.
-    problem is None when info is set; otherwise ('notpkg' | 'type' | 'error', reason)."""
+    """(info, problem) for a .pkg: info = (title_id, kind, title, version, content_id, console) or
+    None. problem is None when info is set; otherwise ('notpkg' | 'type' | 'error', reason)."""
     try:
-        cid, sfo = read_sfo(path)
+        console, cid, ctype, meta = read_pkg(path)
     except NotPkg as e:
         return None, ('notpkg', str(e))
     except SfoError as e:
         return None, ('error', str(e))
-    kind = PKG_KINDS.get(sfo.get('CATEGORY'))
+    if console == 'PS5':
+        kind = PS5_CONTENT_TYPES.get(ctype)
+        if not kind:
+            return None, ('type', f'PS5 pkg type 0x{ctype:x} not recognised yet (only base games so far)')
+        if not meta.get('titleId'):
+            return None, ('error', 'param.json has no titleId')
+        return _ps5_tuple(meta, kind, cid), None
+    kind = PKG_KINDS.get(meta.get('CATEGORY'))
     if not kind:
-        return None, ('type', f"pkg type not renamed (CATEGORY {sfo.get('CATEGORY') or 'missing'})")
-    return _pkg_tuple(cid, sfo, kind), None
+        return None, ('type', f"pkg type not renamed (CATEGORY {meta.get('CATEGORY') or 'missing'})")
+    return _pkg_tuple(cid, meta, kind), None
 
 
 APP_JSON = os.path.join('sce_sys', 'param.json')   # PS5 game folder
@@ -664,16 +731,14 @@ def _ps5_title(params):
 
 def app_read(path):
     """(info, problem) for a game folder, like pkg_read: info = (title_id, kind, title, version,
-    content_id), kind 'app' for games, or 'patch' / 'dlc' for dumped PS4 patches / DLC."""
+    content_id, console), kind 'app' for games, or 'patch' / 'dlc' for dumped PS4 patches / DLC."""
     try:
         if os.path.isfile(lp(os.path.join(path, APP_JSON))):
             with open(lp(os.path.join(path, APP_JSON)), encoding='utf-8-sig') as f:
                 params = json.load(f)
-            gid, cid = params.get('titleId') or '', params.get('contentId') or ''
-            if not gid:
+            if not params.get('titleId'):
                 return None, ('error', 'param.json has no titleId')
-            ver = params.get('masterVersion') or params.get('contentVersion') or ''
-            return (gid, 'app', _ps5_title(params), ver, re.sub(r'[^A-Za-z0-9_-]', '', cid)), None
+            return _ps5_tuple(params, 'app'), None
         with open(lp(os.path.join(path, APP_SFO)), 'rb') as f:
             sfo = parse_sfo(f.read(MAX_SFO))
     except (OSError, ValueError) as e:  # ValueError includes JSON errors
@@ -683,8 +748,8 @@ def app_read(path):
     kind = PKG_KINDS.get(sfo.get('CATEGORY'))
     if not kind:
         return None, ('type', f"game folder type not renamed (CATEGORY {sfo.get('CATEGORY') or 'missing'})")
-    gid, _, title, ver, cid = _pkg_tuple(sfo.get('CONTENT_ID', ''), sfo, kind)
-    return (gid, APP_KINDS.get(kind, kind), title, ver, cid), None
+    gid, _, title, ver, cid, console = _pkg_tuple(sfo.get('CONTENT_ID', ''), sfo, kind)
+    return (gid, APP_KINDS.get(kind, kind), title, ver, cid, console), None
 
 
 def walk_games(root):
@@ -698,7 +763,7 @@ def walk_games(root):
 
 
 def pkg_info(path):
-    """(title_id, kind, pkg_title, version, content_id) from a pkg's param.sfo, or None.
+    """(title_id, kind, pkg_title, version, content_id, console) from a pkg, or None.
     pkg_title is the DLC's name for DLC, the game title as the pkg spells it otherwise."""
     return pkg_read(path)[0]
 
@@ -717,7 +782,19 @@ def _pkg_tuple(cid, sfo, kind):
     dlc = sfo.get('TITLE_01') or sfo.get('TITLE') or (cid[20:] if kind == 'dlc' else '')
     ver = pkg_version(sfo, kind)
     content_id = sfo.get('CONTENT_ID') or cid
-    return gid, kind, dlc, ver, re.sub(r'[^A-Za-z0-9_-]', '', content_id)
+    return gid, kind, dlc, ver, re.sub(r'[^A-Za-z0-9_-]', '', content_id), 'PS4'
+
+
+def ps5_version(params):
+    """The version of a PS5 game: masterVersion (contentVersion if there's none)."""
+    return params.get('masterVersion') or params.get('contentVersion') or ''
+
+
+def _ps5_tuple(params, kind, cid=''):
+    """Info tuple from a PS5 param.json (pkg or game folder)."""
+    content_id = params.get('contentId') or cid
+    return (params.get('titleId', ''), kind, _ps5_title(params), ps5_version(params),
+            re.sub(r'[^A-Za-z0-9_-]', '', content_id), 'PS5')
 
 
 def version_tag(ver):
@@ -735,7 +812,7 @@ def pkg_name(info, db, style, unknown, ext='.pkg'):
     out with --no-type.
     A base/patch Title edited in the db's PKGS section works like a DLC title: what it adds to
     the game title goes right after it ("... Soundtrack Restoration Mod [patch].pkg")."""
-    gid, kind, ptitle, ver, cid = info
+    gid, kind, ptitle, ver, cid, _ = info
     if gid not in db:
         unknown.add(gid)
     pkgs = getattr(db, 'pkgs', {})
@@ -834,8 +911,14 @@ class ResultLog:
               f'errors: {len(self.errors)}\nLog: {self.path}')
 
 
+class NameTaken(Exception):
+    """A loose pkg's game folder name is already used by another game."""
+
+
 def game_dir(root, gid, db, style, planned):
-    """Folder in root for a loose pkg: an existing folder for the ID, else a new one."""
+    """Folder in root for a loose pkg: an existing folder of this game, else a new one. Games are
+    never merged: a folder with the right name that holds another game's pkgs (e.g. the PS4
+    version of a PS5 game with the same title) raises NameTaken."""
     if gid in planned:  # already being created in this run
         return planned[gid], False
     wanted = windows_safe(style.game(db, gid))
@@ -844,11 +927,16 @@ def game_dir(root, gid, db, style, planned):
     for d in names:  # "CUSA00900", "Bloodborne [CUSA00900]", ...
         if gid in ID_RE.findall(d):
             return d, False
-    if wanted in names:
-        return wanted, False
     for d in names:  # "Bloodborne" or any folder holding only this game's pkgs
         if folder_gid(os.path.join(root, d)) == gid:
             return d, False
+    taken = [d for d in names if os.path.normcase(d) == os.path.normcase(wanted)]
+    if taken or wanted in planned.values():
+        owner = folder_gid(os.path.join(root, taken[0])) if taken else None
+        if taken and owner is None:   # an empty / non-game folder with this name: use it
+            return taken[0], False
+        raise NameTaken(f'folder "{wanted}" belongs to another game'
+                        f'{f" ({owner})" if owner else ""}: use --add-id or --add-console to tell them apart')
     planned[gid] = wanted
     return wanted, True
 
@@ -896,8 +984,12 @@ def rename_all(root, db, style, apply, undo_log, log):
                 nn, reason = name, problem[1] if problem else 'no game ID in name'
             unknown |= missing
             # a pkg sitting directly in root goes into its game's folder
-            subdir, create = (game_dir(root, info[0], db, style, planned) if info and not app and dp == root
-                              else ('', False))
+            try:
+                subdir, create = (game_dir(root, info[0], db, style, planned) if info and not app and dp == root
+                                  else ('', False))
+            except NameTaken as e:
+                log.error(relpath, str(e))
+                continue
             if nn == name and not subdir:
                 log.keep(relpath, reason)
                 continue
@@ -905,8 +997,13 @@ def rename_all(root, db, style, apply, undo_log, log):
             target = os.path.join(subdir, nn) if subdir else nn
             key = os.path.normcase(os.path.abspath(dst))
             if key in claimed or (os.path.exists(lp(dst)) and not same_file(src, dst)):  # same file = case-only
-                hint = (' (use --add-version to tell versions apart'
-                        + (', or drop --no-type' if style.no_type else '') + ')') if key in claimed else ''
+                if name in dns and not app:
+                    hint = ' (another game has the same folder name: use --add-id or --add-console)'
+                elif key in claimed:
+                    hint = (' (use --add-version to tell versions apart'
+                            + (', or drop --no-type' if style.no_type else '') + ')')
+                else:
+                    hint = ''
                 log.error(relpath, f'target already exists: {target}{hint}')
                 continue
             claimed.add(key)
@@ -1237,7 +1334,7 @@ def export_xlsx(db, path):
         own = by_game.get(gid, [])
         base = sorted((v for k, v in own if k in ('base', 'app')), key=_ver_key)
         patch = sorted((v for k, v in own if k == 'patch'), key=_ver_key)
-        games.append([gid, db[gid][0], db[gid][1], ', '.join(base), patch[-1] if patch else '',
+        games.append([gid, db[gid][0], db[gid][1], db[gid][2], ', '.join(base), patch[-1] if patch else '',
                       str(sum(1 for k, _ in own if k == 'dlc') or '')])
     order = {'app': 0, 'base': 0, 'patch': 1, 'dlc': 2}
     rows = []
@@ -1246,8 +1343,8 @@ def export_xlsx(db, path):
                                           order.get(kv[0][1], 9), _ver_key(kv[0][2]), kv[0][0])):
         rows.append([gid, db[gid][0] if gid in db else '', kind, ver, cid, title])
     write_xlsx(path, [
-        ('Games', ['Title ID', 'Title', 'Region', 'Base version', 'Latest patch', 'DLC'], games,
-         [12, 50, 8, 13, 13, 6]),
+        ('Games', ['Title ID', 'Title', 'Region', 'Console', 'Base version', 'Latest patch', 'DLC'], games,
+         [12, 50, 8, 9, 13, 13, 6]),
         ('PKGs', ['Title ID', 'Game', 'Type', 'Version', 'Content ID', 'Title in db (DLC name / label)'], rows,
          [12, 50, 7, 9, 40, 60]),
     ])
@@ -1337,11 +1434,12 @@ def migrate_db(root, db_path):
 def refresh_db(a):
     """Load the db, first adding games/pkgs found in PATH that it lacks (unless --no-auto-db)."""
     db = load_db(a.db) if os.path.exists(a.db) else TitleDB()
-    new, new_pkgs = missing_ids(a.root, db)
-    if not a.no_auto_db and (new or new_pkgs or not db):
+    new, new_pkgs, no_console = missing_ids(a.root, db)
+    if not a.no_auto_db and (new or new_pkgs or no_console or not db):
         # new games / pkgs found: add them to the db first (same as --build-db)
         what = [f'{len(new)} game ID(s) ({", ".join(sorted(new))})' if new else '',
-                f'{new_pkgs} pkg(s)' if new_pkgs else '']
+                f'{new_pkgs} pkg(s)' if new_pkgs else '',
+                f'console of {no_console} game(s)' if no_console else '']
         print(f'Not in db yet: {" and ".join(w for w in what if w) or "no db"}\nRunning --build-db...')
         build_db(a.root, a.db, offline=a.offline)
         db = load_db(a.db)
@@ -1378,12 +1476,14 @@ def main():
                     help='write tags without [ ], e.g. "Bloodborne CUSA00900 v1.09 patch.pkg"')
     ap.add_argument('--add-region', action='store_true',
                     help='add the region tag after the title/ID, e.g. "Bloodborne [CUSA00900] [USA]"')
+    ap.add_argument('--add-console', action='store_true',
+                    help='add the console tag (PS4/PS5, from the db) after the region, e.g. "Bloodborne [PS4] [base].pkg"')
     ap.add_argument('--no-type', action='store_true',
                     help='leave out the [base] / [patch] / [dlc] tag, e.g. "Bloodborne [v1.09].pkg"')
     ap.add_argument('--order', metavar='PARTS',
                     help='order of the parts in .pkg file names (folders keep theirs), comma-separated from: '
-                         'title, label, id, region, version, cid, type. Parts not listed follow in the '
-                         'default order (title,label,id,region,version,cid,type), e.g. --order id,title')
+                         'title, label, id, region, console, version, cid, type. Parts not listed follow in the '
+                         'default order (title,label,id,region,console,version,cid,type), e.g. --order id,title')
     ap.add_argument('--build-db', action='store_true', help='add games to the db from param.sfo inside *.pkg files')
     ap.add_argument('--rebuild', action='store_true', help='with --build-db: start a fresh db (drops old entries)')
     ap.add_argument('--offline', action='store_true', help="don't look up English names online when building the db")
@@ -1412,7 +1512,7 @@ def main():
     except ValueError as e:
         ap.error(f'--order: {e}')
     style = Style(a.add_id, a.add_version, a.add_content_id, a.no_title, a.sep, not a.no_brackets, a.no_type,
-                  a.add_region, order)
+                  a.add_region, order, a.add_console)
     a.root = os.path.abspath(a.root)
     if not os.path.isdir(a.root):
         ap.error(f'not a directory: {a.root}')
