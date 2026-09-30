@@ -18,6 +18,7 @@ CUSA11253_base.pkg  (loose in root)          Dead Cells [CUSA11253]/
 - **Recognises base games, patches and DLC** (`CATEGORY` `gd`, `gp`, `ac`) and tags them `[base]`, `[patch]` and `[dlc]`.
 - **Optional tags:** title ID (`CUSA00900`), version (`v1.09`), region (`USA`/`EUR`/`JPN`/`ASIA`), content ID. You can also choose the separator, write tags without brackets, or name by ID only.
 - **Turns `CUSA` / `CUSAXXXXX` folders into game-name folders,** and moves loose PKGs into their game's folder.
+- **PS5 games and dumped PS4 games too:** extracted game folders with `sce_sys/param.json` (PS5) or `sce_sys/param.sfo` (PS4) are renamed as one item, e.g. `The Binding of Isaac Repentance [PPSA03311] [v1.01] [app]`, and their contents are never touched ([Game folders](#game-folders-ps5-and-dumped-ps4-games)).
 - **English names** for Japanese / Korean / Chinese titles, looked up online once and stored in an editable title database.
 - **Safe:**
   - Dry run by default, with a results log.
@@ -47,6 +48,7 @@ CUSA11253_base.pkg  (loose in root)          Dead Cells [CUSA11253]/
 - [Naming scheme](#naming-scheme)
   - [Name style options](#name-style-options)
   - [File part order](#file-part-order)
+  - [Game folders (PS5 and dumped PS4 games)](#game-folders-ps5-and-dumped-ps4-games)
   - [Loose PKGs in the top folder](#loose-pkgs-in-the-top-folder)
 - [Running again](#running-again)
 - [Undo](#undo)
@@ -257,7 +259,7 @@ Every run reads each PKG's `param.sfo` anyway, so the db isn't a speed-up. It's 
 - **Lines:** one line per PKG file and version.
   - **ContentID:** the PKG's content ID. A base game and its patches share one, and each DLC has its own.
   - **Version:** the version the PKG is known by. That's `APP_VER` for patches and `VERSION` for base games and DLC. See **Version** under [Name style options](#name-style-options).
-  - **Type:** `base`, `patch` or `dlc`.
+  - **Type:** `base`, `patch` or `dlc`, or `app` for a game folder (see [Game folders](#game-folders-ps5-and-dumped-ps4-games)).
   - **TitleID:** the game the PKG belongs to.
   - **Title:** the title as written in that PKG. For DLC it's the DLC's name. For base games and patches it's the game title as the PKG spells it.
 - **What's used for naming:**
@@ -412,7 +414,7 @@ These options can be combined freely:
 | Option | Effect | Applies to | Example |
 |---|---|---|---|
 | `--add-id` | adds the title ID after the title | folders and files | `Bloodborne [CUSA00900] [patch].pkg` |
-| `--no-title` | leaves the game title out, and writes the first part without brackets. Needs `--add-id` or `--add-content-id` | `.pkg` files only | `CUSA00900 [patch].pkg` |
+| `--no-title` | leaves the game title out, and writes the first part without brackets. Needs `--add-id` or `--add-content-id` | `.pkg` files and game folders | `CUSA00900 [patch].pkg` |
 | `--add-version` | adds a version tag before the type tag | `.pkg` files | `Bloodborne [v1.09] [patch].pkg` |
 | `--add-content-id` | adds a content ID tag before the type tag | `.pkg` files | `Bloodborne [UP9000-CUSA00900_00-BLOODBORNE000000] [patch].pkg` |
 | `--no-type` | leaves out the type tag | `.pkg` files | `Bloodborne [v1.09].pkg` |
@@ -459,8 +461,8 @@ Bloodborne/
   | base game | `VERSION` | the version the base PKG was built at, e.g. `v1.07` for a base PKG that already contains updates. A base PKG's `APP_VER` is always `01.00` |
   | DLC | `VERSION` | DLC has no `APP_VER` |
 - **Content ID:** the PKG's full content ID, `<region prefix>-<title ID>_00-<label>`. It's unique per PKG: each DLC has its own, and a base game and its patches share one. The prefix also shows the region: `UP` = USA, `EP` = EUR, `JP` = JPN, `HP` = Asia.
-- **Folders:** version, content ID and type are only added to `.pkg` files, because a folder holds several PKGs of different versions and types. Folders always keep the game title, even with `--no-title`.
-- **`--no-title`:** removes the game title from `.pkg` file names only. It must be combined with `--add-id` or `--add-content-id`, so every file still says which game it belongs to. The script stops with an error otherwise. The name's first part is written without brackets, so names don't start with `[`, e.g. `CUSA00900 [v1.09] [patch].pkg`, or `v1.09 [CUSA00900] [patch].pkg` with `--order version`. A DLC keeps its own name, and a patch keeps a label you gave it in the db, so different DLC of the same game still get different names.
+- **Folders:** version, content ID and type are only added to `.pkg` files and to [game folders](#game-folders-ps5-and-dumped-ps4-games). A normal game folder holds several PKGs of different versions and types, so it only gets title, ID and region, and always keeps the game title, even with `--no-title`.
+- **`--no-title`:** removes the game title from `.pkg` file names and game folders only. It must be combined with `--add-id` or `--add-content-id`, so every file still says which game it belongs to. The script stops with an error otherwise. The name's first part is written without brackets, so names don't start with `[`, e.g. `CUSA00900 [v1.09] [patch].pkg`, or `v1.09 [CUSA00900] [patch].pkg` with `--order version`. A DLC keeps its own name, and a patch keeps a label you gave it in the db, so different DLC of the same game still get different names.
 - **`--sep`:**
   - `SEP` can be any characters that are valid in file names, e.g. `_`, `.` or `-`. `--sep ""` removes spaces entirely.
   - It replaces the spaces the script generates, in titles, DLC titles and between tags, including before the type tag: `Bloodborne_The_Old_Hunters_[CUSA00900]_[dlc].pkg`.
@@ -496,6 +498,28 @@ The default order is `title,label,id,region,version,cid,type`. List the parts yo
 - **Positions only:** `--order` only changes where parts go. Whether a tag appears still depends on its option.
 - **Checked:** an unknown or repeated part name stops the script with an error.
 - **Changing order later:** file names are rebuilt from `param.sfo` on every run, so you can change the order at any time. Undo keeps working.
+
+### Game folders (PS5 and dumped PS4 games)
+
+Besides PKG files, the script renames **extracted game folders**: a PS5 game, or a dumped PS4 game, stored as a folder instead of a `.pkg`. It recognises them by their system file:
+
+| Folder contains | Platform | Read from it |
+|---|---|---|
+| `sce_sys/param.json` | PS5 | `titleId`, `contentId`, the English `titleName` under `localizedParameters`, and `masterVersion` |
+| `sce_sys/param.sfo` | PS4 dump | the same fields as a PKG's `param.sfo`. The version is `VERSION`, like a PS4 base game |
+
+```
+The Binding of Isaac Repentance 01.000 PPSA03311/     ->  The Binding of Isaac Repentance [PPSA03311] [USA] [v1.01] [app]/
+├── eboot.bin                                             ├── eboot.bin              (untouched)
+├── PPSA03311.complete                                    ├── PPSA03311.complete     (untouched)
+└── sce_sys/param.json                                    └── sce_sys/param.json     (untouched)
+```
+
+- **One item, named like a PKG:** the folder gets the same parts and options as a `.pkg` file (title, label, ID, region, version, content ID, `--order`, `--no-title`, `--sep`, `--no-brackets`), without an extension. Its type tag is `[app]`. A dumped PS4 patch or DLC folder gets `[patch]` or `[dlc]`.
+- **Never entered:** nothing inside a game folder is renamed or moved. That includes the game files, `sce_sys`, and marker files like `PPSA03311.complete` that dump tools create. Loose PKGs are never moved into a game folder either.
+- **Same db:** game folders are added to `ps4_titles.db` like PKGs, as a GAMES line plus a PKGS line with type `app`. So English-name lookup, title edits and labels, `--export-xlsx` and every undo mode work for them too.
+- **PS5 title IDs** (`PPSA…`) are recognised like PS4 ones (`CUSA…`).
+- **Loaders:** if a PS5 loader or tool has the game registered by its folder path, you may need to add it again after renaming.
 
 ### Loose PKGs in the top folder
 
@@ -643,6 +667,9 @@ Yes. `--undo` reverts everything, `--undo-last` reverts the last run, and `--und
 
 **Does it need an internet connection?**
 Only to look up English names for Japanese/Korean/Chinese titles, and only once per game, because results are saved in the db. Use `--offline` to skip the lookup.
+
+**Does it work with PS5 games?**
+Yes, with extracted PS5 game folders, i.e. folders containing `sce_sys/param.json`. They're renamed as one item, e.g. `The Binding of Isaac Repentance [PPSA03311] [v1.01] [app]`, and their contents are never touched. Dumped PS4 games stored as folders (`sce_sys/param.sfo`) work the same way. See [Game folders](#game-folders-ps5-and-dumped-ps4-games).
 
 **Does it run on Windows?**
 Yes, Windows 10/11, Linux and macOS, with Python 3.8+ and no other dependencies. See [Installation](#installation).
