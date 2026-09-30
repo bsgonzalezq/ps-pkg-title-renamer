@@ -35,7 +35,8 @@ The game title is always used, other parts are added as tags; the type tag is la
   --add-id           title ID tag             Bloodborne [CUSA00900] [patch].pkg
   --add-region       region tag               Bloodborne [USA] [patch].pkg
   --add-console      console tag (db)         Bloodborne [PS4] [patch].pkg
-  --add-version      version tag              Bloodborne [v1.09] [patch].pkg   (patch: APP_VER, base/DLC: VERSION)
+  --add-version      version tag              Bloodborne [v1.09] [patch].pkg   (PS4 patch: APP_VER, base/DLC: VERSION;
+                                                                             PS5: contentVersion)
   --add-content-id   content ID tag           Bloodborne [UP9000-CUSA00900_00-BLOODBORNE000000] [patch].pkg
   --no-type          no type tag              Bloodborne [v1.09].pkg
   --no-title         no game title in .pkg    CUSA00900 [v1.09] [patch].pkg     (needs --add-id or --add-content-id;
@@ -46,7 +47,7 @@ The game title is always used, other parts are added as tags; the type tag is la
                      parts: title,label,id,region,console,version,cid,type (listed first, rest keep default order)
   label = the DLC name, or a Title you edited in the db's PKGS section (works for base, patch and DLC)
   Game folders (PS5 sce_sys/param.json, PS4 dump sce_sys/param.sfo) are named like a pkg with
-  type [app] and never entered: The Binding of Isaac Repentance [PPSA03311] [v1.01] [app]
+  type [app] and never entered: The Binding of Isaac Repentance [PPSA03311] [v1.000.000] [app]
   Other folders: <title>[ <ID>][ <region>], always with the title; version, content ID and type
   go on .pkg files and game folders only. DLC keep their DLC title: The Old Hunters [CUSA00900] [dlc].pkg
 
@@ -466,6 +467,11 @@ def build_db(root, path, rebuild=False, offline=False):
         if kind == 'base' and old != key and old in db.pkgs and key not in db.pkgs:
             db.pkgs[key] = db.pkgs.pop(old)  # recorded with APP_VER (01.00) by older versions
             print(f'  ~ {pcid}|{old[2]} -> {ver} (base version is VERSION, not APP_VER)')
+        if console == 'PS5' and key not in db.pkgs:
+            olds = [k for k in db.pkgs if k[0] == pcid and k[1] == kind and k != key]
+            if len(olds) == 1:   # recorded with masterVersion by v1.3.0: keep the line (and edits)
+                db.pkgs[key] = db.pkgs.pop(olds[0])
+                print(f'  ~ {pcid}|{olds[0][2]} -> {ver} (PS5 version is contentVersion)')
         if key not in db.pkgs:
             db.pkgs[key] = (gid, (db.dlc_title(pcid) or ptitle) if kind == 'dlc' else ptitle)
             new_pkgs += 1
@@ -786,8 +792,9 @@ def _pkg_tuple(cid, sfo, kind):
 
 
 def ps5_version(params):
-    """The version of a PS5 game: masterVersion (contentVersion if there's none)."""
-    return params.get('masterVersion') or params.get('contentVersion') or ''
+    """The version of a PS5 game: contentVersion, the game version including updates (e.g.
+    02.002.000); masterVersion (the package's master version) only if there's no contentVersion."""
+    return params.get('contentVersion') or params.get('masterVersion') or ''
 
 
 def _ps5_tuple(params, kind, cid=''):
@@ -798,9 +805,9 @@ def _ps5_tuple(params, kind, cid=''):
 
 
 def version_tag(ver):
-    """'01.09' -> 'v1.09'."""
-    m = re.fullmatch(r'0*(\d+)\.(\d+)', ver.strip())
-    return f'v{m.group(1)}.{m.group(2)}' if m else (f'v{ver.strip()}' if ver.strip() else '')
+    """'01.09' -> 'v1.09', '01.000.000' -> 'v1.000.000' (leading zeros of the first part dropped)."""
+    m = re.fullmatch(r'0*(\d+)((?:\.\d+)+)', ver.strip())
+    return f'v{m.group(1)}{m.group(2)}' if m else (f'v{ver.strip()}' if ver.strip() else '')
 
 
 def pkg_name(info, db, style, unknown, ext='.pkg'):
@@ -1466,7 +1473,7 @@ def main():
                          'or --add-content-id; the first part loses its brackets, e.g. "CUSA00900 [v1.09] [patch].pkg"')
     ap.add_argument('--add-version', action='store_true',
                     help='add the pkg version to .pkg names, e.g. "Bloodborne [v1.09] [patch].pkg" '
-                         '(patches: APP_VER; base games and DLC: VERSION)')
+                         '(PS4 patches: APP_VER; PS4 base games and DLC: VERSION; PS5: contentVersion)')
     ap.add_argument('--add-content-id', action='store_true',
                     help='add the content ID to .pkg names, e.g. "Bloodborne [UP9000-CUSA00900_00-BLOODBORNE000000] [base].pkg"')
     ap.add_argument('--sep', default=' ', metavar='SEP',

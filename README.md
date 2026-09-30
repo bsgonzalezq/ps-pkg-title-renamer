@@ -461,13 +461,16 @@ Bloodborne/
 └── Bloodborne The Old Hunters [v1.00].pkg
 ```
 
-- **Version:** read from the PKG's `param.sfo`, and the field used depends on the type. Leading zeros are dropped, so `01.09` becomes `v1.09`:
+- **Version:** read from the PKG's `param.sfo`, or `param.json` for PS5. The field used depends on the type:
 
   | Type | Field | Why |
   |---|---|---|
   | patch | `APP_VER` | the version the patch updates the game to. A patch's `VERSION` is usually `01.00` |
   | base game | `VERSION` | the version the base PKG was built at, e.g. `v1.07` for a base PKG that already contains updates. A base PKG's `APP_VER` is always `01.00` |
   | DLC | `VERSION` | DLC has no `APP_VER` |
+  | PS5 PKG or game folder | `contentVersion` | the game version including updates, e.g. `02.002.000` gives `v2.002.000`. `masterVersion` is only used if there's no `contentVersion` |
+
+  Leading zeros of the first number are dropped, and the rest is kept as is: `01.09` becomes `v1.09`, and `01.000.000` becomes `v1.000.000`.
 - **Content ID:** the PKG's full content ID, `<region prefix>-<title ID>_00-<label>`. It's unique per PKG: each DLC has its own, and a base game and its patches share one. The prefix also shows the region: `UP` = USA, `EP` = EUR, `JP` = JPN, `HP` = Asia.
 - **Folders:** version, content ID and type are only added to `.pkg` files and to [game folders](#game-folders-ps5-and-dumped-ps4-games). A normal game folder holds several PKGs of different versions and types, so it only gets title, ID and region, and always keeps the game title, even with `--no-title`.
 - **`--no-title`:** removes the game title from `.pkg` file names and game folders only. It must be combined with `--add-id` or `--add-content-id`, so every file still says which game it belongs to. The script stops with an error otherwise. The name's first part is written without brackets, so names don't start with `[`, e.g. `CUSA00900 [v1.09] [patch].pkg`, or `v1.09 [CUSA00900] [patch].pkg` with `--order version`. A DLC keeps its own name, and a patch keeps a label you gave it in the db, so different DLC of the same game still get different names.
@@ -513,11 +516,11 @@ The default order is `title,label,id,region,console,version,cid,type`. List the 
 PS5 `.pkg` files, e.g. fpkgs, are renamed like PS4 PKGs, with the same parts and options:
 
 ```
-UP2103-PPSA03311_00-BOIREPENTANCEPS5.pkg  ->  The Binding of Isaac Repentance [PPSA03311] [PS5]/The Binding of Isaac Repentance [PPSA03311] [PS5] [v1.01] [base].pkg
+UP2103-PPSA03311_00-BOIREPENTANCEPS5.pkg  ->  The Binding of Isaac Repentance [PPSA03311] [PS5]/The Binding of Isaac Repentance [PPSA03311] [PS5] [v1.000.000] [base].pkg
 ```
 
 - **How they're read:** a PS5 PKG starts with `\x7fFIH` instead of PS4's `\x7fCNT`. The value at offset `0x58` points to a PS4-style metadata block inside it, whose entry `0x2000` is the game's `param.json`. The script jumps straight there and reads a few KB, however big the PKG is.
-- **What's used:** `titleId`, `contentId`, the English `titleName` and `masterVersion`, the same fields as PS5 game folders.
+- **What's used:** `titleId`, `contentId`, the English `titleName` and `contentVersion`, the same fields as PS5 game folders. `contentVersion` is the game's version including updates, e.g. `02.002.000` gives `[v2.002.000]`. The PKG's `masterVersion` can stay at `01.00` even when the game is at 2.002.
 - **Types:** so far only **base games** (content type `0x20`) are recognised. A PS5 patch or DLC PKG is reported as `PS5 pkg type 0x… not recognised yet` and left alone, until its type code is known.
 - **Separate from PS4:** a PS5 game has its own title ID (`PPSA…`), db entry and folder. It's never merged with the PS4 version of the same title. If two games would get the same folder name, e.g. `ELDEN RING` for both PS4 and PS5 in the default style, the second one is reported with a hint to use `--add-id` or `--add-console`, and nothing is moved into the other game's folder.
 
@@ -527,11 +530,11 @@ Besides PKG files, the script renames **extracted game folders**: a PS5 game, or
 
 | Folder contains | Platform | Read from it |
 |---|---|---|
-| `sce_sys/param.json` | PS5 | `titleId`, `contentId`, the English `titleName` under `localizedParameters`, and `masterVersion` |
+| `sce_sys/param.json` | PS5 | `titleId`, `contentId`, the English `titleName` under `localizedParameters`, and `contentVersion` |
 | `sce_sys/param.sfo` | PS4 dump | the same fields as a PKG's `param.sfo`. The version is `VERSION`, like a PS4 base game |
 
 ```
-The Binding of Isaac Repentance 01.000 PPSA03311/     ->  The Binding of Isaac Repentance [PPSA03311] [USA] [v1.01] [app]/
+The Binding of Isaac Repentance 01.000 PPSA03311/     ->  The Binding of Isaac Repentance [PPSA03311] [USA] [v1.000.000] [app]/
 ├── eboot.bin                                             ├── eboot.bin              (untouched)
 ├── PPSA03311.complete                                    ├── PPSA03311.complete     (untouched)
 └── sce_sys/param.json                                    └── sce_sys/param.json     (untouched)
@@ -693,7 +696,7 @@ Only to look up English names for Japanese/Korean/Chinese titles, and only once 
 **Does it work with PS5 games?**
 Yes, with both kinds:
 - **PS5 `.pkg` files (fpkg):** read from the `param.json` inside them. Base games are supported so far. See [PS5 PKGs](#ps5-pkgs).
-- **Extracted PS5 game folders** (`sce_sys/param.json`): renamed as one item, e.g. `The Binding of Isaac Repentance [PPSA03311] [v1.01] [app]`, with their contents never touched. Dumped PS4 games stored as folders (`sce_sys/param.sfo`) work the same way. See [Game folders](#game-folders-ps5-and-dumped-ps4-games).
+- **Extracted PS5 game folders** (`sce_sys/param.json`): renamed as one item, e.g. `The Binding of Isaac Repentance [PPSA03311] [v1.000.000] [app]`, with their contents never touched. Dumped PS4 games stored as folders (`sce_sys/param.sfo`) work the same way. See [Game folders](#game-folders-ps5-and-dumped-ps4-games).
 
 PS4 and PS5 versions of a game stay separate. Use `--add-console` to tag names `[PS4]` / `[PS5]`.
 
