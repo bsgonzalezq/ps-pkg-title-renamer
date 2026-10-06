@@ -1,4 +1,4 @@
-# Install / verify prerequisites for ps4-pkg-title-renamer on Windows 10/11: Python 3.8+ and git.
+# Install / verify prerequisites for ps-pkg-title-renamer on Windows 10/11: Python 3.8+ and git.
 # Run from the repo folder:  powershell -ExecutionPolicy Bypass -File .\install_prereqs.ps1
 $ErrorActionPreference = 'Stop'
 Set-Location -Path $PSScriptRoot
@@ -45,5 +45,5 @@ if ((Test-Path requirements.txt) -and (Select-String -Path requirements.txt -Pat
 
 Write-Host ''
 Write-Host "OK: Python $($py.Version) ($($py.Cmd)), $(git --version)"
-& $py.Cmd ps4_rename.py --help | Out-Null
-if ($LASTEXITCODE -eq 0) { Write-Host "OK: ps4_rename.py runs. Try: $($py.Cmd) ps4_rename.py --help" }
+& $py.Cmd ps_pkg_rename.py --help | Out-Null
+if ($LASTEXITCODE -eq 0) { Write-Host "OK: ps_pkg_rename.py runs. Try: $($py.Cmd) ps_pkg_rename.py --help" }

@@ -5,3 +5,5 @@ rename_undo.log*
 *.pkg
 ps4_titles.db
 ps4_titles.xlsx
+ps_titles.db
+ps_titles.xlsx

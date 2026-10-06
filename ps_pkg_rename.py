@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-# ps4-pkg-title-renamer - rename PS4 PKG files and CUSA folders to game names
-# Copyright (C) 2026 bsgonzalezq (https://github.com/bsgonzalezq/ps4-pkg-title-renamer)
+# ps-pkg-title-renamer - rename PS4 / PS5 PKG files, game folders and CUSA/PPSA folders to game names
+# Copyright (C) 2026 bsgonzalezq (https://github.com/bsgonzalezq/ps-pkg-title-renamer)
 #
 # This program is free software: you can redistribute it and/or modify it under the terms of the
 # GNU General Public License as published by the Free Software Foundation, either version 3 of the
@@ -17,17 +17,17 @@ param.sfo) the same way, move loose pkgs into their game folder, and replace tit
 (CUSA12345, ...) in folder names with game titles.
 
 Usage:
-  ps4_rename.py [PATH]                 dry run in PATH (default: current directory)
-  ps4_rename.py [PATH] --apply         perform the renames (writes rename_undo.log)
-  ps4_rename.py [PATH] --undo          revert all renames under PATH recorded in rename_undo.log
-  ps4_rename.py [PATH] --undo-last     preview reverting only the last --apply run (+ --apply)
-  ps4_rename.py [PATH] --undo-match TEXT
+  ps_pkg_rename.py [PATH]                 dry run in PATH (default: current directory)
+  ps_pkg_rename.py [PATH] --apply         perform the renames (writes rename_undo.log)
+  ps_pkg_rename.py [PATH] --undo          revert all renames under PATH recorded in rename_undo.log
+  ps_pkg_rename.py [PATH] --undo-last     preview reverting only the last --apply run (+ --apply)
+  ps_pkg_rename.py [PATH] --undo-match TEXT
                                        preview reverting only renames whose path contains TEXT
                                        (+ --apply)
-  ps4_rename.py [PATH] --build-db      create/update the db from *.pkg files
-  ps4_rename.py [PATH] --clean-logs    delete rename_results_*.log (keeps rename_undo.log)
-  ps4_rename.py [PATH] --export-xlsx [FILE]
-                                       export the db to Excel (default: ps4_titles.xlsx next to the db)
+  ps_pkg_rename.py [PATH] --build-db      create/update the db from *.pkg files
+  ps_pkg_rename.py [PATH] --clean-logs    delete rename_results_*.log (keeps rename_undo.log)
+  ps_pkg_rename.py [PATH] --export-xlsx [FILE]
+                                       export the db to Excel (default: ps_titles.xlsx next to the db)
 
 Name style (for a rename run; a later run with other options re-styles everything).
 The game title is always used, other parts are added as tags; the type tag is last by default:
@@ -60,13 +60,13 @@ rename_results_<action>_<timestamp>.log (CHANGED, NOT CHANGED + reason, ERRORS),
 and --apply records renames in rename_undo.log for --undo. Only the newest results
 logs are kept (5, or --keep-logs N); rename_undo.log is never deleted.
 
-The script keeps itself, its db (ps4_titles.db) and its logs in a folder named
-ps4-pkg-title-renamer (the older name ps4-title-renamer is accepted too); run from
-anywhere else, it creates ./ps4-pkg-title-renamer and moves there.
+The script keeps itself, its db (ps_titles.db) and its logs in a folder named
+ps-pkg-title-renamer (older names ps4-pkg-title-renamer / ps4-title-renamer are accepted too);
+run from anywhere else, it creates ./ps-pkg-title-renamer and moves there.
 
 Works on Linux, macOS and Windows 10/11 (use `py` or `python` instead of `python3`).
 
-DB (ps4_titles.db, plain text, '#' comments; edits are kept, --build-db --rebuild starts over):
+DB (ps_titles.db, plain text, '#' comments; edits are kept, --build-db --rebuild starts over):
   GAMES:  TitleID|Title|Region|Console                  CUSA00900|Bloodborne™|USA|PS4
   PKGS:   ContentID|Version|Type|TitleID|Title          UP9000-CUSA00900_00-SPEXPANSIONDLC03|01.00|dlc|CUSA00900|Bloodborne The Old Hunters
   Game titles and DLC titles are used for names; edit them to rename.
@@ -95,12 +95,15 @@ for _stream in (sys.stdout, sys.stderr):
 
 HERE = os.path.dirname(os.path.realpath(__file__))   # real script folder, even when run via a symlink
 UNDO_LOG = os.path.join(HERE, 'rename_undo.log')
-DB_FILE = os.path.join(HERE, 'ps4_titles.db')
-TOOL_DIR = 'ps4-pkg-title-renamer'   # folder the script (with its db and logs) always lives in
-TOOL_DIRS = (TOOL_DIR, 'ps4-title-renamer')   # names accepted (the second is the repo's old name)
+DB_FILE = os.path.join(HERE, 'ps_titles.db')
+OLD_DB_NAMES = ('ps4_titles.db',)   # db file names of older versions (migrated to ps_titles.db)
+SCRIPT_NAMES = ('ps_pkg_rename.py', 'ps4_rename.py')   # this script, and its name in older versions
+TOOL_DIR = 'ps-pkg-title-renamer'   # folder the script (with its db and logs) always lives in
+TOOL_DIRS = (TOOL_DIR, 'ps4-pkg-title-renamer', 'ps4-title-renamer')   # accepted (older repo names)
 MAX_LOGS = 5                     # default number of results logs kept (--keep-logs)
 ID_RE = re.compile(r'(?<![A-Z])([A-Z]{4}\d{5})(?!\d)')
-SKIP = {'System Volume Information', '$RECYCLE.BIN', '.Trash-1000', '.git', 'ps4-pkg-title-renamer', 'ps4-title-renamer'}
+SKIP = {'System Volume Information', '$RECYCLE.BIN', '.Trash-1000', '.git',
+        'ps-pkg-title-renamer', 'ps4-pkg-title-renamer', 'ps4-title-renamer'}
 REGIONS = {'UP': 'USA', 'EP': 'EUR', 'JP': 'JPN', 'HP': 'ASIA', 'KP': 'KOR'}
 # chars not allowed on exFAT/NTFS
 BAD = str.maketrans({':': ' - ', '/': '-', '\\': '-', '*': '', '?': '', '"': "'",
@@ -292,7 +295,7 @@ def read_sfo(pkg):
 FOREIGN = re.compile(r'[぀-ヺー-ヿ㐀-䶿一-鿿가-힯ᄀ-ᇿ㄰-㆏]')
 SEGMENT = re.compile(r'[぀-ヺー-ヿ㐀-䶿一-鿿가-힯ᄀ-ᇿ㄰-㆏]'
                      r'[぀-ヺー-ヿ㐀-䶿一-鿿가-힯ᄀ-ᇿ㄰-㆏\s]*')
-USER_AGENT = 'ps4_rename/1.0 (PS4 PKG title lookup; python-urllib)'
+USER_AGENT = 'ps_pkg_rename/1.0 (PS4/PS5 PKG title lookup; python-urllib)'
 _last_request = [0.0]
 
 
@@ -909,7 +912,7 @@ class ResultLog:
     def write(self):
         sections = [('CHANGED', self.changed), ('NOT CHANGED', self.unchanged), ('ERRORS', self.errors)]
         with open(self.path, 'w', encoding='utf-8') as f:
-            f.write(f'# ps4_rename.py {self.action}  {datetime.now():%Y-%m-%d %H:%M:%S}\n')
+            f.write(f'# ps_pkg_rename.py {self.action}  {datetime.now():%Y-%m-%d %H:%M:%S}\n')
             f.write('# ' + ', '.join(f'{t.lower()}: {len(l)}' for t, l in sections) + '\n')
             for title, lines in sections:
                 f.write(f'\n=== {title} ({len(lines)}) ===\n')
@@ -952,7 +955,7 @@ def rename_all(root, db, style, apply, undo_log, log):
     unknown, done, planned = set(), [], {}
     bad_pkgs = 0      # pkgs / game folders whose param.sfo / param.json couldn't be used
     claimed = set()   # targets used in this run, so dry runs catch two items getting the same name
-    own = {'ps4_titles.db', 'ps4_rename.py', os.path.basename(undo_log)}
+    own = {os.path.basename(DB_FILE), *OLD_DB_NAMES, *SCRIPT_NAMES, os.path.basename(undo_log)}
     # bottom-up (children before parents, so files are renamed before their folders):
     # reversed top-down order; game folders are listed but never entered
     for dp, dns, fns in reversed(list(walk_games(root))):
@@ -1385,8 +1388,8 @@ def merge_db(src, dst):
 
 
 def relocate():
-    """Keep the script in a folder named ps4-pkg-title-renamer (or the old ps4-title-renamer):
-    if it isn't in one, create ./ps4-pkg-title-renamer under the current directory, move the
+    """Keep the script in a folder named ps-pkg-title-renamer (or an older name, see TOOL_DIRS):
+    if it isn't in one, create ./ps-pkg-title-renamer under the current directory, move the
     script plus its db and logs there, and re-run from the new location.
     Returns False if it stayed where it is."""
     def is_tool_dir(path):
@@ -1398,7 +1401,7 @@ def relocate():
         return False
     cwd = os.getcwd()
     target = cwd if is_tool_dir(cwd) else os.path.join(cwd, TOOL_DIR)
-    script = os.path.join(target, 'ps4_rename.py')
+    script = os.path.join(target, SCRIPT_NAMES[0])
     if os.path.exists(script):
         print(f'Note: {script} already exists, not replacing it; running from {HERE}\n')
         return False
@@ -1408,12 +1411,13 @@ def relocate():
     # bring the db and logs along
     for fn in sorted(os.listdir(HERE)):
         src, dst = os.path.join(HERE, fn), os.path.join(target, fn)
-        if fn == 'ps4_titles.db':
+        if fn in (os.path.basename(DB_FILE),) + OLD_DB_NAMES:
+            dst = os.path.join(target, os.path.basename(DB_FILE))   # old db names get the new one
             if os.path.exists(dst):
                 print(f'  merged {merge_db(src, dst)} db entries into {dst}')
             else:
                 shutil.move(src, dst)
-                print(f'  moved {fn}')
+                print(f'  moved {fn}' + (f' (as {os.path.basename(dst)})' if fn != os.path.basename(dst) else ''))
         elif fn in ('rename_undo.log', 'rename_undo.log.done'):
             with open(src, encoding='utf-8') as f, open(dst, 'a', encoding='utf-8') as out:
                 out.write(f.read())
@@ -1431,11 +1435,20 @@ def relocate():
 
 
 def migrate_db(root, db_path):
-    """Merge a ps4_titles.db left in PATH by older versions into the db next to the script."""
-    old = os.path.join(root, 'ps4_titles.db')
-    if os.path.isfile(old) and not same_path(old, db_path):
-        n = merge_db(old, db_path)
-        print(f'Merged {old} into {db_path} ({n} new entries)\n')
+    """Bring dbs of older versions into db_path: a ps4_titles.db next to the script (renamed, or
+    merged if both exist), and a ps4_titles.db / ps_titles.db left in PATH (merged)."""
+    for name in OLD_DB_NAMES:
+        old = os.path.join(os.path.dirname(os.path.abspath(db_path)), name)
+        if os.path.isfile(old) and not same_path(old, db_path):
+            if os.path.exists(db_path):
+                print(f'Merged {old} into {db_path} ({merge_db(old, db_path)} new entries)\n')
+            else:
+                os.rename(old, db_path)
+                print(f'Renamed {old} -> {os.path.basename(db_path)}\n')
+    for name in (os.path.basename(DB_FILE),) + OLD_DB_NAMES:
+        old = os.path.join(root, name)
+        if os.path.isfile(old) and not same_path(old, db_path):
+            print(f'Merged {old} into {db_path} ({merge_db(old, db_path)} new entries)\n')
 
 
 def refresh_db(a):
@@ -1496,14 +1509,14 @@ def main():
     ap.add_argument('--offline', action='store_true', help="don't look up English names online when building the db")
     ap.add_argument('--no-auto-db', action='store_true',
                     help="don't run --build-db automatically when IDs are missing from the db")
-    ap.add_argument('--db', metavar='FILE', help='db file (default: ps4_titles.db next to the script)')
+    ap.add_argument('--db', metavar='FILE', help='db file (default: ps_titles.db next to the script)')
     ap.add_argument('--log', metavar='FILE',
                     help='results log path (default: rename_results_<action>_<timestamp>.log in the script folder)')
     ap.add_argument('--keep-logs', type=int, default=MAX_LOGS, metavar='N',
                     help=f'number of results logs to keep, oldest are deleted (default: {MAX_LOGS}, 0 = keep all)')
     ap.add_argument('--export-xlsx', '--export-xls', nargs='?', const='', default=None, metavar='FILE',
                     help='export the db as an Excel workbook (Games and PKGs sheets) and exit; '
-                         'default file: ps4_titles.xlsx next to the db. The db is updated from PATH first')
+                         'default file: ps_titles.xlsx next to the db. The db is updated from PATH first')
     ap.add_argument('--clean-logs', action='store_true',
                     help='delete rename_results_*.log files (rename_undo.log is kept) and exit')
     a = ap.parse_args()
@@ -1534,7 +1547,7 @@ def main():
         clean_logs(a.root)
         return
     if a.export_xlsx is not None:
-        out = a.export_xlsx or os.path.join(os.path.dirname(os.path.abspath(a.db)), 'ps4_titles.xlsx')
+        out = a.export_xlsx or os.path.join(os.path.dirname(os.path.abspath(a.db)), 'ps_titles.xlsx')
         if not out.lower().endswith('.xlsx'):
             out += '.xlsx'
         export_xlsx(refresh_db(a), out)

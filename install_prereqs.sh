@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Install / verify prerequisites for ps4-pkg-title-renamer: Python 3.8+ and git.
+# Install / verify prerequisites for ps-pkg-title-renamer: Python 3.8+ and git.
 # Supports apt (Debian/Ubuntu), dnf (Fedora/RHEL), pacman (Arch), zypper (openSUSE) and Homebrew (macOS).
 set -euo pipefail
 
@@ -46,8 +46,8 @@ if [ -s requirements.txt ] && grep -qv '^\s*\(#\|$\)' requirements.txt; then
     python3 -m pip install --user -r requirements.txt
 fi
 
-chmod +x ps4_rename.py
+chmod +x ps_pkg_rename.py
 
 echo
 echo "OK: $(python3 --version 2>&1), $(git --version)"
-python3 ps4_rename.py -h >/dev/null && echo "OK: ps4_rename.py runs. Try: ./ps4_rename.py --help"
+python3 ps_pkg_rename.py -h >/dev/null && echo "OK: ps_pkg_rename.py runs. Try: ./ps_pkg_rename.py --help"

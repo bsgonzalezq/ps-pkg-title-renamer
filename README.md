@@ -1,6 +1,8 @@
-# PS4 PKG Title Renamer
+# PS4 / PS5 PKG Title Renamer
 
-**Rename PS4 `.pkg` files and `CUSA` title-ID folders to game names, automatically.** `ps4-pkg-title-renamer` reads the `param.sfo` inside each PS4 PKG. From it, the script gets the game title, title ID, type (base game, patch or DLC), version and content ID, and uses them to give every file and folder a clear, consistent name. It's a small Python script with no dependencies, and it runs on Linux, macOS and Windows.
+**Rename PS4 and PS5 `.pkg` files, game folders and `CUSA` / `PPSA` title-ID folders to game names, automatically.** `ps-pkg-title-renamer` reads the metadata inside each package: the `param.sfo` of a PS4 PKG, or the `param.json` of a PS5 PKG. From it, the script gets the game title, title ID, console, type (base game, patch or DLC), version and content ID. It uses them to give every file and folder a clear, consistent name. It's a small Python script, `ps_pkg_rename.py`, with no dependencies, and it runs on Linux, macOS and Windows.
+
+> **Renamed:** this project was called `ps4-pkg-title-renamer`, with the script `ps4_rename.py` and the db `ps4_titles.db`. The old GitHub URL redirects here. The script still accepts the old folder names, and it renames an old `ps4_titles.db` to `ps_titles.db` automatically. See [Updating](#updating).
 
 ```
 CUSA00900/                                   Bloodborne [CUSA00900]/
@@ -82,8 +84,8 @@ The prerequisites are also listed in [`requirements.txt`](requirements.txt), whi
 sudo apt-get update && sudo apt-get install -y git
 
 # 2. clone the repo
-git clone https://github.com/bsgonzalezq/ps4-pkg-title-renamer.git
-cd ps4-pkg-title-renamer
+git clone https://github.com/bsgonzalezq/ps-pkg-title-renamer.git
+cd ps-pkg-title-renamer
 
 # 3. install / verify Python 3.8+ and git (apt, dnf, pacman, zypper or Homebrew)
 ./install_prereqs.sh
@@ -106,17 +108,17 @@ If you'd rather install by hand:
 ```powershell
 winget install -e --id Git.Git          # skip if git is installed
 # reopen the terminal so git is on PATH, then:
-git clone https://github.com/bsgonzalezq/ps4-pkg-title-renamer.git
-cd ps4-pkg-title-renamer
+git clone https://github.com/bsgonzalezq/ps-pkg-title-renamer.git
+cd ps-pkg-title-renamer
 powershell -ExecutionPolicy Bypass -File .\install_prereqs.ps1   # installs / checks Python 3.8+ and git
-py ps4_rename.py --help
+py ps_pkg_rename.py --help
 ```
 
 `install_prereqs.ps1` works like `install_prereqs.sh`: it installs only what's missing (through `winget`), checks the Python version, and checks the script runs.
 
 **Using the script on Windows:**
 
-- **Commands:** use `py` or `python` where this README shows `python3`, and `\` in paths, e.g. `py ps4-pkg-title-renamer\ps4_rename.py D:\PS4 --apply`.
+- **Commands:** use `py` or `python` where this README shows `python3`, and `\` in paths, e.g. `py ps-pkg-title-renamer\ps_pkg_rename.py D:\PS4 --apply`.
 - **Everything else works as on Linux:** a drive root like `D:\` works as `PATH`, and the script checks the OS when it starts. It handles Windows differences automatically:
   - **Long paths:** paths longer than 260 characters work even if Windows' long-path support is off.
   - **Case:** Windows ignores letter case in names and paths (`C:\Games` = `c:\games`), and so does the script, including renames that only change letter case.
@@ -128,20 +130,30 @@ py ps4_rename.py --help
 ### Updating
 
 ```bash
-cd ps4-pkg-title-renamer
+cd ps-pkg-title-renamer
 git pull
 ```
 
-If you keep a copy of `ps4_rename.py` somewhere else, such as next to your games, copy it over again after pulling.
+If you keep a copy of `ps_pkg_rename.py` somewhere else, such as next to your games, copy it over again after pulling.
+
+**Updating a clone made under the old name.** GitHub redirects the old URL, so `git pull` keeps working. To point the clone at the new name, and optionally rename its folder:
+
+```bash
+git -C ps4-pkg-title-renamer remote set-url origin https://github.com/bsgonzalezq/ps-pkg-title-renamer.git
+git -C ps4-pkg-title-renamer pull
+mv ps4-pkg-title-renamer ps-pkg-title-renamer        # optional: the old folder name keeps working
+```
+
+After pulling, run `ps_pkg_rename.py` instead of `ps4_rename.py`. On its first run, your `ps4_titles.db` becomes `ps_titles.db`, with all your edits kept. `rename_undo.log` is unchanged, so undo still covers renames made with the old script.
 
 ## Quick start
 
-The script always lives in a folder named `ps4-pkg-title-renamer`, together with its db (`ps4_titles.db`) and all its logs:
+The script always lives in a folder named `ps-pkg-title-renamer`, together with its db (`ps_titles.db`) and all its logs:
 
-- **Moving itself:** if you run it from a folder with any other name, it creates `ps4-pkg-title-renamer/` in your current directory. It moves itself there along with its db and logs, removes the old folder if that's now empty, and carries on. So you can drop `ps4_rename.py` into your games folder and run it.
+- **Moving itself:** if you run it from a folder with any other name, it creates `ps-pkg-title-renamer/` in your current directory. It moves itself there along with its db and logs, removes the old folder if that's now empty, and carries on. So you can drop `ps_pkg_rename.py` into your games folder and run it.
 - **Git clones:** the script never moves out of a git clone.
-- **Existing copy:** it won't overwrite a `ps4_rename.py` that's already in `./ps4-pkg-title-renamer/`.
-- **Old folder name:** `ps4-title-renamer`, the repo's previous name, is still accepted, so existing clones keep working.
+- **Existing copy:** it won't overwrite a `ps_pkg_rename.py` that's already in `./ps-pkg-title-renamer/`.
+- **Old folder names:** `ps4-pkg-title-renamer` and `ps4-title-renamer`, the repo's previous names, are still accepted, so existing clones keep working.
 
 The examples use relative paths.
 
@@ -153,9 +165,9 @@ Both examples use this layout, with the script in a subfolder of the games folde
 games/                  <- games folder (holds the PKG folders)
 ├── CUSA00900/
 ├── CUSA00419/
-└── ps4-pkg-title-renamer/  <- script folder (a clone of this repo, or created automatically)
-    ├── ps4_rename.py
-    ├── ps4_titles.db
+└── ps-pkg-title-renamer/  <- script folder (a clone of this repo, or created automatically)
+    ├── ps_pkg_rename.py
+    ├── ps_titles.db
     └── rename_undo.log, rename_results_*.log
 ```
 
@@ -163,30 +175,30 @@ games/                  <- games folder (holds the PKG folders)
 
 ```bash
 cd games
-python3 ps4-pkg-title-renamer/ps4_rename.py --build-db   # 1. create ps4_titles.db (optional, done automatically)
-python3 ps4-pkg-title-renamer/ps4_rename.py              # 2. dry run: shows what would change
-python3 ps4-pkg-title-renamer/ps4_rename.py --apply      # 3. rename
-python3 ps4-pkg-title-renamer/ps4_rename.py --undo       #    revert everything, if needed
-python3 ps4-pkg-title-renamer/ps4_rename.py --undo-last  #    or preview reverting just the last run (see Undo)
+python3 ps-pkg-title-renamer/ps_pkg_rename.py --build-db   # 1. create ps_titles.db (optional, done automatically)
+python3 ps-pkg-title-renamer/ps_pkg_rename.py              # 2. dry run: shows what would change
+python3 ps-pkg-title-renamer/ps_pkg_rename.py --apply      # 3. rename
+python3 ps-pkg-title-renamer/ps_pkg_rename.py --undo       #    revert everything, if needed
+python3 ps-pkg-title-renamer/ps_pkg_rename.py --undo-last  #    or preview reverting just the last run (see Undo)
 ```
 
-**Option 2: your terminal is in the script folder** (`games/ps4-pkg-title-renamer/`). Pass `..`, the parent folder, as `PATH`:
+**Option 2: your terminal is in the script folder** (`games/ps-pkg-title-renamer/`). Pass `..`, the parent folder, as `PATH`:
 
 ```bash
-cd games/ps4-pkg-title-renamer
-python3 ps4_rename.py .. --build-db
-python3 ps4_rename.py ..
-python3 ps4_rename.py .. --apply
-python3 ps4_rename.py .. --undo
-python3 ps4_rename.py .. --undo-last
+cd games/ps-pkg-title-renamer
+python3 ps_pkg_rename.py .. --build-db
+python3 ps_pkg_rename.py ..
+python3 ps_pkg_rename.py .. --apply
+python3 ps_pkg_rename.py .. --undo
+python3 ps_pkg_rename.py .. --undo-last
 ```
 
 The db and all logs are always kept in the script's folder, whichever `PATH` you process, so one db serves all your game folders.
 
-Optional: to run it as just `ps4_rename.py` from anywhere, run this from the script's folder to link it into your PATH:
+Optional: to run it as just `ps_pkg_rename.py` from anywhere, run this from the script's folder to link it into your PATH:
 
 ```bash
-mkdir -p ~/.local/bin && ln -sf "$PWD/ps4_rename.py" ~/.local/bin/ps4_rename.py
+mkdir -p ~/.local/bin && ln -sf "$PWD/ps_pkg_rename.py" ~/.local/bin/ps_pkg_rename.py
 ```
 
 Re-run the link command if you move the script.
@@ -217,13 +229,13 @@ Re-run the link command if you move the script.
 | `--db FILE` | Title db to use (see below) |
 | `--log FILE` | Where to write the results log (default: the script's folder) |
 | `--keep-logs N` | Number of results logs to keep; older ones are deleted. Default 5, and `0` keeps all |
-| `--export-xlsx [FILE]` | Export the db as an Excel workbook and exit. The default file is `ps4_titles.xlsx` next to the db. See [Using the db](#using-the-db) |
+| `--export-xlsx [FILE]` | Export the db as an Excel workbook and exit. The default file is `ps_titles.xlsx` next to the db. See [Using the db](#using-the-db) |
 | `--clean-logs` | Delete the results logs; `rename_undo.log` is kept |
 | `-h`, `--help` | Show help |
 
 ## Title database
 
-`ps4_titles.db` is a plain-text file next to the script. It has two sections, and you can edit both by hand:
+`ps_titles.db` is a plain-text file next to the script. It has two sections, and you can edit both by hand:
 
 ```
 # GAMES: TitleID|Title|Region|Console
@@ -277,7 +289,7 @@ Every run reads each PKG's `param.sfo` anyway, so the db isn't a speed-up. It's 
 
 ### Using the db
 
-The db is plain text, so you can open it in any text editor. After editing, do a dry run to check the new names, then `--apply`. The examples assume the script's folder is `ps4-pkg-title-renamer/` inside your games folder.
+The db is plain text, so you can open it in any text editor. After editing, do a dry run to check the new names, then `--apply`. The examples assume the script's folder is `ps-pkg-title-renamer/` inside your games folder.
 
 **Rename a game.** Edit its title in the GAMES section:
 
@@ -324,13 +336,13 @@ CUSA12345|My Game|USA
 **See what you have.** The PKGS section lists every PKG, with its type and version:
 
 ```bash
-grep '|patch|' ps4-pkg-title-renamer/ps4_titles.db             # every patch and its version
-grep '|dlc|CUSA00900|' ps4-pkg-title-renamer/ps4_titles.db     # all DLC of one game
-grep 'CUSA00900' ps4-pkg-title-renamer/ps4_titles.db           # everything for one game
+grep '|patch|' ps-pkg-title-renamer/ps_titles.db             # every patch and its version
+grep '|dlc|CUSA00900|' ps-pkg-title-renamer/ps_titles.db     # all DLC of one game
+grep 'CUSA00900' ps-pkg-title-renamer/ps_titles.db           # everything for one game
 ```
 
 ```powershell
-Select-String '\|patch\|' ps4-pkg-title-renamer\ps4_titles.db  # Windows
+Select-String '\|patch\|' ps-pkg-title-renamer\ps_titles.db  # Windows
 ```
 
 A game with several `patch` lines has had more than one patch version on your drive. The db keeps a line for each version it has seen.
@@ -338,8 +350,8 @@ A game with several `patch` lines has had more than one patch version on your dr
 **Open it in Excel.** `--export-xlsx` writes the db as a spreadsheet you can sort and filter:
 
 ```bash
-python3 ps4-pkg-title-renamer/ps4_rename.py --export-xlsx                  # -> ps4-pkg-title-renamer/ps4_titles.xlsx
-python3 ps4-pkg-title-renamer/ps4_rename.py --export-xlsx my_games.xlsx    # or choose the file
+python3 ps-pkg-title-renamer/ps_pkg_rename.py --export-xlsx                  # -> ps-pkg-title-renamer/ps_titles.xlsx
+python3 ps-pkg-title-renamer/ps_pkg_rename.py --export-xlsx my_games.xlsx    # or choose the file
 ```
 
 | Sheet | Columns |
@@ -351,22 +363,22 @@ python3 ps4-pkg-title-renamer/ps4_rename.py --export-xlsx my_games.xlsx    # or 
 - **Values:** all values are text, so versions keep their exact form, e.g. `01.07`.
 - **Up to date:** before exporting, the db is updated from `PATH` the way a normal run does it, so the workbook is complete. `--no-auto-db` exports the db as it is.
 - **Format:** the file is `.xlsx`, which Excel, LibreOffice, Google Sheets and Numbers all open. It's written with Python's standard library, so nothing needs installing. `--export-xls` works as another name for the option, but the file is still `.xlsx`, not the old binary `.xls` format.
-- **One-way:** the workbook is only an export. Edits you make in it aren't read back, so edit `ps4_titles.db` to change names.
+- **One-way:** the workbook is only an export. Edits you make in it aren't read back, so edit `ps_titles.db` to change names.
 
 **Work offline.** Once the db holds the English names, runs don't need internet. `--offline` skips the online lookup for any new game.
 
-**Use the same names on another machine.** Copy `ps4_titles.db` next to the script there. Your edited titles, DLC names and English names come along. It's plain UTF-8 text, so it works on Linux, macOS and Windows.
+**Use the same names on another machine.** Copy `ps_titles.db` next to the script there. Your edited titles, DLC names and English names come along. It's plain UTF-8 text, so it works on Linux, macOS and Windows.
 
-**Back up your edits.** Git ignores the db, so copy `ps4_titles.db` somewhere safe before `--build-db --rebuild`. A rebuild starts from the PKGs again and discards every edit.
+**Back up your edits.** Git ignores the db, so copy `ps_titles.db` somewhere safe before `--build-db --rebuild`. A rebuild starts from the PKGs again and discards every edit.
 
 ### Updating the db
 
-- **Location:** the db is always `ps4_titles.db` next to the script. `--db FILE` overrides this. A `ps4_titles.db` left in `PATH` by older versions is merged into it automatically and then removed.
+- **Location:** the db is always `ps_titles.db` next to the script. `--db FILE` overrides this. A `ps_titles.db` left in `PATH` by older versions is merged into it automatically and then removed.
 - **Your edits are kept:** `--build-db` only adds games and PKGs that aren't in the db yet. Use `--rebuild` to start over.
 - **Automatic updates:** a normal run checks every PKG first. If a game or PKG isn't in the db, or there's no db yet, it runs `--build-db` before renaming, so you never need to run `--build-db` yourself. Use `--no-auto-db` to turn this off.
 - **Older dbs:** a db from an older version, with the games section only, keeps working and gets its PKGS section on the next run.
 
-`ps4_titles.db` isn't part of the repo and is listed in `.gitignore`. It's created on the first run and grows as new games are found. Because git ignores it, it's safe to keep next to the script in a clone, and `git pull` never conflicts with it.
+`ps_titles.db` isn't part of the repo and is listed in `.gitignore`. It's created on the first run and grows as new games are found. Because git ignores it, it's safe to keep next to the script in a clone, and `git pull` never conflicts with it.
 
 ### English names for non-English titles
 
@@ -385,7 +397,7 @@ CUSA32997: 怒首領蜂大往生 臨廻転生   ->  DoDonPachi DaiOuJou
 
 ## Naming scheme
 
-Every PS4 PKG is named from its own `param.sfo`, whatever it's currently called. The PKG type is a tag like the others, `[base]`, `[patch]` or `[dlc]`. In the default order, shown here, it's the last tag:
+Every PKG is named from its own metadata, `param.sfo` (PS4) or `param.json` (PS5), whatever it's currently called. The PKG type is a tag like the others, `[base]`, `[patch]` or `[dlc]`. In the default order, shown here, it's the last tag:
 
 ```
 <title>[ <ID>][ <region>][ <version>][ <content ID>] [base].pkg
@@ -411,7 +423,7 @@ Every PS4 PKG is named from its own `param.sfo`, whatever it's currently called.
 - **Folders:**
   - A folder with a title ID in its name is renamed to its game's name, keeping any other text: `CUSA00900 backup/` becomes `Bloodborne backup/`.
   - A folder without an ID is only renamed when its name starts with the game title and all the PKGs directly inside it belong to that game. That's what lets a folder renamed earlier as `Bloodborne/` be switched to `Bloodborne [CUSA00900]/` and back.
-- **Other files:** files that aren't PS4 PKGs and have no ID, such as logs, are left alone.
+- **Other files:** files that aren't PS4 or PS5 PKGs and have no ID, such as logs, are left alone.
 - **Duplicate names:** two patches for the same game in one folder would both become `Bloodborne [patch].pkg`. The second one is logged as an error and left as it is. Dry runs catch this too. Use `--add-version` to give each patch its own name, e.g. `Bloodborne [v1.04] [patch].pkg` and `Bloodborne [v1.09] [patch].pkg`. With `--no-type`, a base game and its patch collide the same way, so combine `--no-type` with `--add-version`.
 
 ### Name style options
@@ -542,7 +554,7 @@ The Binding of Isaac Repentance 01.000 PPSA03311/     ->  The Binding of Isaac R
 
 - **One item, named like a PKG:** the folder gets the same parts and options as a `.pkg` file (title, label, ID, region, version, content ID, `--order`, `--no-title`, `--sep`, `--no-brackets`), without an extension. Its type tag is `[app]`. A dumped PS4 patch or DLC folder gets `[patch]` or `[dlc]`.
 - **Never entered:** nothing inside a game folder is renamed or moved. That includes the game files, `sce_sys`, and marker files like `PPSA03311.complete` that dump tools create. Loose PKGs are never moved into a game folder either.
-- **Same db:** game folders are added to `ps4_titles.db` like PKGs, as a GAMES line plus a PKGS line with type `app`. So English-name lookup, title edits and labels, `--export-xlsx` and every undo mode work for them too.
+- **Same db:** game folders are added to `ps_titles.db` like PKGs, as a GAMES line plus a PKGS line with type `app`. So English-name lookup, title edits and labels, `--export-xlsx` and every undo mode work for them too.
 - **PS5 title IDs** (`PPSA…`) are recognised like PS4 ones (`CUSA…`), and the db records the console (`PS5` / `PS4`).
 - **Loaders:** if a PS5 loader or tool has the game registered by its folder path, you may need to add it again after renaming.
 
@@ -590,20 +602,20 @@ Run these from the games folder:
 
 ```bash
 # revert everything
-python3 ps4-pkg-title-renamer/ps4_rename.py --undo
+python3 ps-pkg-title-renamer/ps_pkg_rename.py --undo
 
 # step back one --apply run at a time: preview, then do it
-python3 ps4-pkg-title-renamer/ps4_rename.py --undo-last
-python3 ps4-pkg-title-renamer/ps4_rename.py --undo-last --apply
+python3 ps-pkg-title-renamer/ps_pkg_rename.py --undo-last
+python3 ps-pkg-title-renamer/ps_pkg_rename.py --undo-last --apply
 
 # a single file
-python3 ps4-pkg-title-renamer/ps4_rename.py --undo-match "Old Hunters" --apply
+python3 ps-pkg-title-renamer/ps_pkg_rename.py --undo-match "Old Hunters" --apply
 
 # one game: its folder and every file in it
-python3 ps4-pkg-title-renamer/ps4_rename.py --undo-match Bloodborne --apply
+python3 ps-pkg-title-renamer/ps_pkg_rename.py --undo-match Bloodborne --apply
 
 # games in another folder: pass it as PATH
-python3 ps4-pkg-title-renamer/ps4_rename.py ../other-games --undo-last --apply
+python3 ps-pkg-title-renamer/ps_pkg_rename.py ../other-games --undo-last --apply
 ```
 
 A preview lists every rename it would revert as `current name -> original name` and changes nothing:
@@ -657,18 +669,18 @@ CUSA00900/CUSA00900_patch.pkg  (target already exists: Bloodborne [patch].pkg)
 To delete old results logs:
 
 ```bash
-python3 ps4_rename.py --clean-logs
+python3 ps_pkg_rename.py --clean-logs
 ```
 
 This deletes every `rename_results_*.log` in the script's folder, plus any left in `PATH` by older versions. It never deletes `rename_undo.log` or `rename_undo.log.done`.
 
 ## FAQ
 
-**How do I rename PS4 PKG files to their game names?**
+**How do I rename PS4 / PS5 PKG files to their game names?**
 Put the script in your PKG folder and run a dry run, then apply:
 ```bash
-python3 ps4-pkg-title-renamer/ps4_rename.py            # preview
-python3 ps4-pkg-title-renamer/ps4_rename.py --apply    # rename
+python3 ps-pkg-title-renamer/ps_pkg_rename.py            # preview
+python3 ps-pkg-title-renamer/ps_pkg_rename.py --apply    # rename
 ```
 See [Quick start](#quick-start) for more.
 
@@ -682,7 +694,7 @@ The script reads the `CATEGORY` field in `param.sfo` (`gd` = base game, `gp` = p
 For a patch, the version it updates the game to (`APP_VER` in `param.sfo`). For a base game, the version the base PKG was built at (`VERSION`), because a base PKG's `APP_VER` is always `01.00`. For example, Vice City's base PKG is `v1.07` and its patch is `v1.08`.
 
 **Does it work with fake PKGs (fPKG), GoldHEN and Itemzflow?**
-It works with any PS4 PKG whose `param.sfo` can be read, which includes fake PKGs and homebrew. It only renames files and folders. It never changes the contents of a PKG, so the PKGs install the same way afterwards. Check whether your install tool expects the title ID in the name. If it does, use `--add-id`.
+It works with any PS4 PKG whose `param.sfo` can be read, and with PS5 base game PKGs. That includes fake PKGs and homebrew. It only renames files and folders. It never changes the contents of a PKG, so the PKGs install the same way afterwards. Check whether your install tool expects the title ID in the name. If it does, use `--add-id`.
 
 **Can I keep the CUSA ID in the name?**
 Yes, `--add-id` gives `Bloodborne [CUSA00900] [base].pkg`. Add `--no-title` to drop the game title from file names, e.g. `CUSA00900 [base].pkg`, and `--add-region` to add `[USA]`.
@@ -707,7 +719,7 @@ Yes, Windows 10/11, Linux and macOS, with Python 3.8+ and no other dependencies.
 
 - Characters that exFAT/NTFS don't allow are replaced: `:` becomes ` - `; `? * " < > |`, `™` and `®` are removed or replaced.
 - Existing files are never overwritten. A name collision is logged as an error and skipped.
-- **Broken or unreadable PKGs:** every `.pkg` is checked before its `param.sfo` is used. A PS4 PKG whose `param.sfo` can't be used is logged under ERRORS with the reason and left as it is. It's usually a bad or incomplete download. The possible reasons are:
+- **Broken or unreadable PKGs:** every `.pkg` is checked before its `param.sfo` or `param.json` is used. A PKG whose metadata can't be used is logged under ERRORS with the reason and left as it is. It's usually a bad or incomplete download. The possible reasons are:
 
   | Reason in the log | Meaning |
   |---|---|
@@ -718,7 +730,7 @@ Yes, Windows 10/11, Linux and macOS, with Python 3.8+ and no other dependencies.
 
   - **Summary:** both a rename run and `--build-db` end with a count of the PKGs that couldn't be read. `--build-db` also lists each one.
   - **Size limit:** a `param.sfo` is never read past 1 MB, even if a corrupt header claims more.
-  - **Other `.pkg` files:** a file with a `.pkg` extension that isn't a PS4 PKG at all, i.e. has no PKG header, is treated like any other file. It's renamed only if its name contains a title ID, and otherwise logged as `not a PS4 pkg`.
+  - **Other `.pkg` files:** a file with a `.pkg` extension that isn't a PS4 or PS5 PKG at all, i.e. has no PKG header, is treated like any other file. It's renamed only if its name contains a title ID, and otherwise logged as `not a PS4/PS5 pkg`.
 - `System Volume Information`, `$RECYCLE.BIN` and the script's own files are skipped.
 - Check that your install tools don't rely on ID-only folder names: folders always include the game title. Use `--add-id` to keep the ID in them too.
 
